@@ -11,6 +11,7 @@ pub trait RemittanceNftInterface {
     fn seize_collateral(env: Env, user: Address, minter: Option<Address>);
     fn is_seized(env: Env, user: Address) -> bool;
     fn record_default(env: Env, user: Address, minter: Option<Address>);
+    fn is_authorized_minter(env: Env, minter: Address) -> bool;
 }
 
 mod events;
@@ -75,6 +76,7 @@ pub enum DataKey {
     Loan(u32),
     LoanCounter,
     MinScore,
+    MinRepaymentAmount,
     MaxLoanAmount,
     MaxLoansPerBorrower,
     BorrowerLoanCount(Address),
@@ -104,6 +106,7 @@ impl LoanManager {
     const MAX_LATE_FEE_CAP_BPS: u32 = 2500;
     const DEFAULT_MAX_LOAN_AMOUNT: i128 = 50_000;
     const DEFAULT_MAX_LOANS_PER_BORROWER: u32 = 3;
+    const DEFAULT_MIN_REPAYMENT_AMOUNT: i128 = 100;
 
     fn bump_instance_ttl(env: &Env) {
         env.storage()
@@ -137,10 +140,17 @@ impl LoanManager {
 
     fn read_interest_rate(env: &Env) -> u32 {
         Self::bump_instance_ttl(env);
-        env.storage()
+        let configured_rate = env
+            .storage()
             .instance()
             .get(&DataKey::InterestRateBps)
-            .unwrap_or(Self::DEFAULT_INTEREST_RATE_BPS)
+            .unwrap_or(Self::DEFAULT_INTEREST_RATE_BPS);
+
+        if configured_rate == 0 {
+            Self::DEFAULT_INTEREST_RATE_BPS
+        } else {
+            configured_rate
+        }
     }
 
     fn read_default_term(env: &Env) -> u32 {
@@ -223,6 +233,14 @@ impl LoanManager {
             .instance()
             .get(&DataKey::MaxLoansPerBorrower)
             .unwrap_or(Self::DEFAULT_MAX_LOANS_PER_BORROWER)
+    }
+
+    fn min_repayment_amount(env: &Env) -> i128 {
+        Self::bump_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::MinRepaymentAmount)
+            .unwrap_or(Self::DEFAULT_MIN_REPAYMENT_AMOUNT)
     }
 
     fn borrower_loan_count(env: &Env, borrower: &Address) -> u32 {
@@ -408,6 +426,11 @@ impl LoanManager {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LoanCounter, &0u32);
         env.storage().instance().set(&DataKey::Paused, &false);
+
+        let nft_client = NftClient::new(&env, &nft_contract);
+        if !nft_client.is_authorized_minter(&env.current_contract_address()) {
+            panic!("LoanManager must be authorized minter on NFT contract");
+        }
         env.storage()
             .instance()
             .set(&DataKey::Version, &Self::CURRENT_VERSION);
@@ -617,6 +640,11 @@ impl LoanManager {
             return Err(LoanError::RepaymentExceedsDebt);
         }
 
+        let min_repayment_amount = Self::min_repayment_amount(&env);
+        if amount < total_debt && amount < min_repayment_amount {
+            panic!("repayment amount below minimum");
+        }
+
         let token: Address = env
             .storage()
             .instance()
@@ -675,7 +703,7 @@ impl LoanManager {
         if amount >= 100 {
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            nft_client.update_score(&borrower, &amount, &None);
+            nft_client.update_score(&borrower, &amount, &Some(env.current_contract_address()));
         }
 
         if late_fee_delta > 0 {
@@ -999,7 +1027,29 @@ impl LoanManager {
         Self::max_loan_amount(&env)
     }
 
-    pub fn set_max_loans_per_borrower(env: Env, max_loans: u32) -> Result<(), LoanError> {
+    pub fn set_min_repayment_amount(env: Env, amount: i128) {
+        if amount < 0 {
+            panic!("min repayment amount cannot be negative");
+        }
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("not initialized");
+        admin.require_auth();
+
+        env.storage()
+            .instance()
+            .set(&DataKey::MinRepaymentAmount, &amount);
+        Self::bump_instance_ttl(&env);
+    }
+
+    pub fn get_min_repayment_amount(env: Env) -> i128 {
+        Self::min_repayment_amount(&env)
+    }
+
+    pub fn set_max_loans_per_borrower(env: Env, max_loans: u32) {
         if max_loans == 0 {
             return Err(LoanError::InvalidAmount);
         }
@@ -1180,7 +1230,7 @@ impl LoanManager {
 
         let nft_contract = Self::nft_contract(&env);
         let nft_client = NftClient::new(&env, &nft_contract);
-        nft_client.record_default(&loan.borrower, &None);
+        nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
         events::loan_defaulted(&env, loan_id, loan.borrower.clone());
 
@@ -1216,7 +1266,7 @@ impl LoanManager {
 
             let nft_contract = Self::nft_contract(&env);
             let nft_client = NftClient::new(&env, &nft_contract);
-            nft_client.record_default(&loan.borrower, &None);
+            nft_client.record_default(&loan.borrower, &Some(env.current_contract_address()));
 
             events::loan_defaulted(&env, loan_id, loan.borrower.clone());
         }
