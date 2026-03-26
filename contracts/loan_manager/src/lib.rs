@@ -1,6 +1,6 @@
 #![no_std]
 use soroban_sdk::{
-    contract, contractclient, contractimpl, contracttype, contracterror, symbol_short, Address,
+    contract, contractclient, contracterror, contractimpl, contracttype, symbol_short, Address,
     BytesN, Env, String, Vec,
 };
 
@@ -907,22 +907,26 @@ impl LoanManager {
             .expect("lending pool not set");
         let token_client = TokenClient::new(&env, &token);
 
-        if new_amount > remaining_principal {
-            // Pool disburses the additional amount to the borrower.
-            let additional = new_amount
-                .checked_sub(remaining_principal)
-                .expect("underflow");
-            let pool_balance = token_client.balance(&lending_pool);
-            if pool_balance < additional {
-                return Err(LoanError::InsufficientPoolLiquidity);
+        match new_amount.cmp(&remaining_principal) {
+            core::cmp::Ordering::Greater => {
+                // Pool disburses the additional amount to the borrower.
+                let additional = new_amount
+                    .checked_sub(remaining_principal)
+                    .expect("underflow");
+                let pool_balance = token_client.balance(&lending_pool);
+                if pool_balance < additional {
+                    return Err(LoanError::InsufficientPoolLiquidity);
+                }
+                token_client.transfer(&lending_pool, &loan.borrower, &additional);
             }
-            token_client.transfer(&lending_pool, &loan.borrower, &additional);
-        } else if new_amount < remaining_principal {
-            // Borrower returns the excess to the pool.
-            let excess = remaining_principal
-                .checked_sub(new_amount)
-                .expect("underflow");
-            token_client.transfer(&loan.borrower, &lending_pool, &excess);
+            core::cmp::Ordering::Less => {
+                // Borrower returns the excess to the pool.
+                let excess = remaining_principal
+                    .checked_sub(new_amount)
+                    .expect("underflow");
+                token_client.transfer(&loan.borrower, &lending_pool, &excess);
+            }
+            core::cmp::Ordering::Equal => {}
         }
 
         // Reset loan terms.

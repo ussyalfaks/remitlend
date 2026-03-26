@@ -1,8 +1,7 @@
 #![no_std]
 use soroban_sdk::token::Client as TokenClient;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, symbol_short, Address, BytesN, Env,
-    Symbol,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol,
 };
 
 #[contracterror]
@@ -204,7 +203,9 @@ impl LendingPool {
         let acc_key = DataKey::AccYieldPerDeposit(token.clone());
         let unclaimed_key = DataKey::UnclaimedYieldPool(token.clone());
         env.storage().instance().set(&acc_key, &next_index);
-        env.storage().instance().set(&unclaimed_key, &next_unclaimed);
+        env.storage()
+            .instance()
+            .set(&unclaimed_key, &next_unclaimed);
         Self::bump_instance_ttl(env);
     }
 
@@ -303,7 +304,12 @@ impl LendingPool {
         Self::total_deposits(&env, &token)
     }
 
-    pub fn deposit(env: Env, provider: Address, token: Address, amount: i128) -> Result<(), PoolError> {
+    pub fn deposit(
+        env: Env,
+        provider: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
 
@@ -365,7 +371,12 @@ impl LendingPool {
         Self::read_deposit(&env, &provider, &token)
     }
 
-    pub fn withdraw(env: Env, provider: Address, token: Address, amount: i128) -> Result<(), PoolError> {
+    pub fn withdraw(
+        env: Env,
+        provider: Address,
+        token: Address,
+        amount: i128,
+    ) -> Result<(), PoolError> {
         provider.require_auth();
         Self::assert_not_paused(&env)?;
 
@@ -470,8 +481,10 @@ impl LendingPool {
             .set(&unclaimed_key, &remaining_unclaimed);
         Self::bump_instance_ttl(&env);
 
-        env.events()
-            .publish((Symbol::new(&env, "YieldClaimed"), provider, token), claimable);
+        env.events().publish(
+            (Symbol::new(&env, "YieldClaimed"), provider, token),
+            claimable,
+        );
 
         Ok(())
     }

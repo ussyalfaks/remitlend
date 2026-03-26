@@ -1,6 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 use soroban_sdk::{
-    contract, contractimpl, contracttype, contracterror, symbol_short, Address, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     Symbol, Vec,
 };
 
@@ -418,8 +418,8 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .ok_or(NftError::NftNotFound)?;
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         // Simple logic: 1 point per 100 units of repayment
         let points = (repayment_amount / 100) as u32;
@@ -454,8 +454,8 @@ impl RemittanceNFT {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
-        let mut metadata = Self::get_or_migrate_metadata(&env, &user)
-            .ok_or(NftError::NftNotFound)?;
+        let mut metadata =
+            Self::get_or_migrate_metadata(&env, &user).ok_or(NftError::NftNotFound)?;
 
         if metadata.history_hash == new_history_hash {
             return Ok(());
@@ -472,7 +472,11 @@ impl RemittanceNFT {
         Ok(())
     }
 
-    pub fn seize_collateral(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
+    pub fn seize_collateral(
+        env: Env,
+        user: Address,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         let metadata_key = DataKey::Metadata(user.clone());
@@ -495,7 +499,11 @@ impl RemittanceNFT {
         Ok(())
     }
 
-    pub fn record_default(env: Env, user: Address, minter: Option<Address>) -> Result<(), NftError> {
+    pub fn record_default(
+        env: Env,
+        user: Address,
+        minter: Option<Address>,
+    ) -> Result<(), NftError> {
         Self::require_admin_or_authorized_minter(&env, minter)?;
 
         if !Self::has_active_nft(&env, &user) {
@@ -565,8 +573,7 @@ impl RemittanceNFT {
             }
         }
 
-        let metadata = Self::get_or_migrate_metadata(&env, &from)
-            .ok_or(NftError::NftNotFound)?;
+        let metadata = Self::get_or_migrate_metadata(&env, &from).ok_or(NftError::NftNotFound)?;
 
         if Self::has_any_remittance_state(&env, &to) {
             return Err(NftError::DestinationOccupied);
